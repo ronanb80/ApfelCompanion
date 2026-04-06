@@ -43,7 +43,13 @@ struct ContentView: View {
                 if viewModel.messages.isEmpty {
                     emptyState
                 } else {
-                    MessageListView(messages: viewModel.messages, isGenerating: viewModel.isGenerating)
+                    MessageListView(
+                        messages: viewModel.messages,
+                        isGenerating: viewModel.isGenerating,
+                        onCopy: { id in viewModel.copyMessage(id: id) },
+                        onRegenerate: { id in viewModel.regenerateMessage(id: id) },
+                        onEditAndResend: { id in viewModel.editAndResend(id: id) }
+                    )
                 }
 
                 Divider()
@@ -52,8 +58,11 @@ struct ContentView: View {
                     text: $bindableViewModel.inputText,
                     isGenerating: viewModel.isGenerating,
                     isServerReady: viewModel.serverStatus == .ready,
+                    attachments: viewModel.pendingAttachments,
                     onSend: { viewModel.sendMessage() },
-                    onStop: { viewModel.stopGeneration() }
+                    onStop: { viewModel.stopGeneration() },
+                    onAddAttachments: { urls in viewModel.addAttachments(urls: urls) },
+                    onRemoveAttachment: { id in viewModel.removeAttachment(id: id) }
                 )
 
                 StatusIndicator(status: viewModel.serverStatus)

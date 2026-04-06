@@ -3,6 +3,9 @@ import SwiftUI
 struct MessageBubbleView: View {
     let message: ChatMessage
     var isGenerating: Bool = false
+    var onCopy: (() -> Void)?
+    var onRegenerate: (() -> Void)?
+    var onEditAndResend: (() -> Void)?
 
     var body: some View {
         HStack {
@@ -34,6 +37,21 @@ struct MessageBubbleView: View {
                         : Color.secondary.opacity(0.1)
                 )
                 .cornerRadius(12)
+            }
+            .contextMenu {
+                if let onCopy {
+                    Button("Copy", action: onCopy)
+                }
+
+                if let onRegenerate {
+                    Button("Regenerate", action: onRegenerate)
+                        .disabled(isGenerating)
+                }
+
+                if let onEditAndResend {
+                    Button("Edit & Resend", action: onEditAndResend)
+                        .disabled(isGenerating)
+                }
             }
 
             if message.role == .assistant { Spacer(minLength: 60) }

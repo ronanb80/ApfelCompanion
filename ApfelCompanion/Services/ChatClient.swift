@@ -8,7 +8,7 @@ class ChatClient: ChatClientProtocol {
     }
 
     /// Sends messages to the apfel server and returns a stream of response tokens.
-    func sendMessage(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func sendMessage(messages: [ChatMessage], options: ChatRequestOptions) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -17,13 +17,26 @@ class ChatClient: ChatClientProtocol {
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-                    let body: [String: Any] = [
+                    var apiMessages: [[String: String]] = []
+                    if let systemPrompt = options.systemPrompt,
+                       !systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        apiMessages.append(["role": "system", "content": systemPrompt])
+                    }
+                    apiMessages += messages.map {
+                        ["role": $0.role.rawValue, "content": $0.content]
+                    }
+
+                    var body: [String: Any] = [
                         "model": "apple-foundationmodel",
-                        "messages": messages.map {
-                            ["role": $0.role.rawValue, "content": $0.content]
-                        },
+                        "messages": apiMessages,
                         "stream": true
                     ]
+                    if let temperature = options.temperature {
+                        body["temperature"] = temperature
+                    }
+                    if let maxTokens = options.maxTokens {
+                        body["max_tokens"] = maxTokens
+                    }
                     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)

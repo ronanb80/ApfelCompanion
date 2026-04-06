@@ -2,20 +2,33 @@
 import AppKit
 #endif
 import Foundation
+#if canImport(PDFKit)
+import PDFKit
+#endif
 
+struct PendingAttachment: Identifiable, Equatable {
+    let id = UUID()
+    let fileName: String
+    let content: String
+}
+
+@MainActor
 @Observable
 class ChatViewModel {
     var chats: [ChatSession]
     var selectedChatID: ChatSession.ID
+    var settings: AppSettings
+    var pendingAttachments: [PendingAttachment] = []
 
-    private let apfelService: ApfelService
-    private let chatClient: any ChatClientProtocol
-    private let persistence: any ChatPersistenceProtocol
-    private var currentTask: Task<Void, Never>?
-    private var saveTask: Task<Void, Never>?
-    private var generatingChatID: ChatSession.ID?
+    @ObservationIgnored private let apfelService: ApfelService
+    @ObservationIgnored private let chatClient: any ChatClientProtocol
+    @ObservationIgnored private let persistence: any ChatPersistenceProtocol
+    @ObservationIgnored private let settingsPersistence: any SettingsPersistenceProtocol
+    @ObservationIgnored private var currentTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var generatingChatID: ChatSession.ID?
     #if canImport(AppKit)
-    private var terminationObserver: NSObjectProtocol?
+    @ObservationIgnored private nonisolated(unsafe) var terminationObserver: NSObjectProtocol?
     #endif
 
     var serverStatus: ApfelService.Status {
@@ -63,11 +76,14 @@ class ChatViewModel {
     init(
         apfelService: ApfelService,
         chatClient: (any ChatClientProtocol)? = nil,
-        persistence: (any ChatPersistenceProtocol)? = nil
+        persistence: (any ChatPersistenceProtocol)? = nil,
+        settingsPersistence: (any SettingsPersistenceProtocol)? = nil
     ) {
         self.apfelService = apfelService
         self.chatClient = chatClient ?? ChatClient(baseURL: apfelService.baseURL)
         self.persistence = persistence ?? FileChatPersistence()
+        self.settingsPersistence = settingsPersistence ?? FileSettingsPersistence()
+        self.settings = (try? self.settingsPersistence.loadSettings()) ?? .default
 
         if let restoredState = Self.loadInitialState(from: self.persistence) {
             self.chats = restoredState.chats
@@ -84,7 +100,9 @@ class ChatViewModel {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.saveNow()
+            Task { @MainActor [weak self] in
+                self?.saveNow()
+            }
         }
         #endif
     }
@@ -104,6 +122,23 @@ class ChatViewModel {
 
     func stopServer() {
         apfelService.stop()
+    }
+
+    func saveSettings() {
+        try? settingsPersistence.saveSettings(settings)
+    }
+
+    func addAttachments(urls: [URL]) {
+        for url in urls {
+            guard let content = readFileContent(url: url) else { continue }
+            pendingAttachments.append(
+                PendingAttachment(fileName: url.lastPathComponent, content: content)
+            )
+        }
+    }
+
+    func removeAttachment(id: UUID) {
+        pendingAttachments.removeAll { $0.id == id }
     }
 
     func createChat() {
@@ -159,8 +194,19 @@ class ChatViewModel {
 
     func sendMessage() {
         let chatID = selectedChatID
-        let text = selectedChat.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !selectedChat.isGenerating else { return }
+        let rawText = selectedChat.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawText.isEmpty, !selectedChat.isGenerating else { return }
+
+        // Build content with file attachments prepended
+        var contentParts: [String] = []
+        for attachment in pendingAttachments {
+            contentParts.append(
+                "--- File: \(attachment.fileName) ---\n\(attachment.content)\n--- End of \(attachment.fileName) ---"
+            )
+        }
+        contentParts.append(rawText)
+        let text = contentParts.joined(separator: "\n\n")
+        pendingAttachments.removeAll()
 
         let userMessage = ChatMessage(role: .user, content: text)
         updateChat(id: chatID) { chat in
@@ -168,19 +214,72 @@ class ChatViewModel {
             chat.draft = ""
         }
 
-        let assistantMessage = ChatMessage(role: .assistant, content: "")
+        appendPlaceholderAndStream(chatID: chatID)
+    }
+
+    func copyMessage(id: UUID) {
+        guard let message = selectedChat.messages.first(where: { $0.id == id }) else { return }
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(message.content, forType: .string)
+        #endif
+    }
+
+    func regenerateMessage(id: UUID) {
+        let chatID = selectedChatID
+        guard !selectedChat.isGenerating else { return }
+
+        guard let messageIndex = selectedChat.messages.firstIndex(where: { $0.id == id }),
+              selectedChat.messages[messageIndex].role == .assistant else { return }
+
         updateChat(id: chatID) { chat in
-            chat.messages.append(assistantMessage)
+            chat.messages.remove(at: messageIndex)
+        }
+
+        appendPlaceholderAndStream(chatID: chatID)
+    }
+
+    func editAndResend(id: UUID) {
+        let chatID = selectedChatID
+
+        if generatingChatID == chatID {
+            stopGeneration()
+        }
+
+        guard let messageIndex = selectedChat.messages.firstIndex(where: { $0.id == id }),
+              selectedChat.messages[messageIndex].role == .user else { return }
+
+        let messageContent = selectedChat.messages[messageIndex].content
+
+        updateChat(id: chatID) { chat in
+            chat.messages.removeSubrange(messageIndex...)
+            chat.draft = messageContent
+            chat.refreshDerivedState()
+        }
+    }
+
+    private func appendPlaceholderAndStream(chatID: ChatSession.ID) {
+        let placeholder = ChatMessage(role: .assistant, content: "")
+        updateChat(id: chatID) { chat in
+            chat.messages.append(placeholder)
             chat.isGenerating = true
             chat.refreshDerivedState()
         }
         generatingChatID = chatID
 
         let history = Array(chat(for: chatID).messages.dropLast())
+        streamResponse(chatID: chatID, history: history)
+    }
 
+    private func streamResponse(chatID: ChatSession.ID, history: [ChatMessage]) {
         currentTask = Task {
             do {
-                let stream = chatClient.sendMessage(messages: history)
+                let options = ChatRequestOptions(
+                    systemPrompt: settings.systemPrompt.isEmpty ? nil : settings.systemPrompt,
+                    temperature: settings.temperature,
+                    maxTokens: settings.maxTokens
+                )
+                let stream = chatClient.sendMessage(messages: history, options: options)
                 for try await token in stream {
                     updateChat(id: chatID) { chat in
                         if let index = chat.messages.indices.last,
@@ -313,6 +412,56 @@ class ChatViewModel {
                 return persistedChat
             }
         )
+    }
+
+    private func readFileContent(url: URL) -> String? {
+        let maxSize = 100 * 1024 // 100KB limit
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessing { url.stopAccessingSecurityScopedResource() }
+        }
+
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let fileSize = attributes[.size] as? Int,
+              fileSize <= maxSize else {
+            return nil
+        }
+
+        if url.pathExtension.lowercased() == "pdf" {
+            return readPDFContent(url: url)
+        }
+
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func readPDFContent(url: URL) -> String? {
+        #if canImport(PDFKit)
+        guard let document = PDFDocument(url: url) else {
+            return nil
+        }
+
+        let text = (0..<document.pageCount)
+            .compactMap { document.page(at: $0) }
+            .map { page in
+                let pageText = page.string?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !pageText.isEmpty {
+                    return pageText
+                }
+
+                let annotationText = page.annotations
+                    .compactMap(\.contents)
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return annotationText
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+
+        return text.isEmpty ? nil : text
+        #else
+        return nil
+        #endif
     }
 
     private static func loadInitialState(from persistence: any ChatPersistenceProtocol) -> PersistedChatState? {
