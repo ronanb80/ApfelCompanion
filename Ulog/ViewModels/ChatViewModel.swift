@@ -1,3 +1,6 @@
+#if canImport(AppKit)
+import AppKit
+#endif
 import Foundation
 
 @Observable
@@ -7,8 +10,13 @@ class ChatViewModel {
 
     private let apfelService: ApfelService
     private let chatClient: any ChatClientProtocol
+    private let persistence: any ChatPersistenceProtocol
     private var currentTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
     private var generatingChatID: ChatSession.ID?
+    #if canImport(AppKit)
+    private var terminationObserver: NSObjectProtocol?
+    #endif
 
     var serverStatus: ApfelService.Status {
         apfelService.status
@@ -52,12 +60,42 @@ class ChatViewModel {
         canDeleteChats || canClearSelectedChat
     }
 
-    init(apfelService: ApfelService, chatClient: (any ChatClientProtocol)? = nil) {
+    init(
+        apfelService: ApfelService,
+        chatClient: (any ChatClientProtocol)? = nil,
+        persistence: (any ChatPersistenceProtocol)? = nil
+    ) {
         self.apfelService = apfelService
         self.chatClient = chatClient ?? ChatClient(baseURL: apfelService.baseURL)
-        let initialChat = ChatSession()
-        self.chats = [initialChat]
-        self.selectedChatID = initialChat.id
+        self.persistence = persistence ?? FileChatPersistence()
+
+        if let restoredState = Self.loadInitialState(from: self.persistence) {
+            self.chats = restoredState.chats
+            self.selectedChatID = restoredState.selectedChatID
+        } else {
+            let initialChat = ChatSession()
+            self.chats = [initialChat]
+            self.selectedChatID = initialChat.id
+        }
+
+        #if os(macOS)
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.saveNow()
+        }
+        #endif
+    }
+
+    deinit {
+        saveTask?.cancel()
+        #if os(macOS)
+        if let terminationObserver {
+            NotificationCenter.default.removeObserver(terminationObserver)
+        }
+        #endif
     }
 
     func startServer() async {
@@ -72,11 +110,13 @@ class ChatViewModel {
         let chat = ChatSession()
         chats.insert(chat, at: 0)
         selectedChatID = chat.id
+        scheduleSave()
     }
 
     func selectChat(id: ChatSession.ID) {
         guard chats.contains(where: { $0.id == id }) else { return }
         selectedChatID = id
+        scheduleSave()
     }
 
     func deleteChats(at offsets: IndexSet) {
@@ -100,6 +140,8 @@ class ChatViewModel {
         if deletedSelectedChat {
             selectedChatID = chats[0].id
         }
+
+        scheduleSave()
     }
 
     func deleteSelectedChat() {
@@ -196,6 +238,19 @@ class ChatViewModel {
         }
     }
 
+    func clearAllHistory() {
+        stopGeneration()
+
+        let emptyChat = ChatSession()
+        chats = [emptyChat]
+        selectedChatID = emptyChat.id
+        scheduleSave()
+    }
+
+    func saveNowForTesting() {
+        saveNow()
+    }
+
     private var selectedChatIndex: Int {
         if let index = chats.firstIndex(where: { $0.id == selectedChatID }) {
             return index
@@ -218,11 +273,76 @@ class ChatViewModel {
         let index = selectedChatIndex
         update(&chats[index])
         chats[index].updatedAt = Date()
+        scheduleSave()
     }
 
     private func updateChat(id: ChatSession.ID, _ update: (inout ChatSession) -> Void) {
         guard let index = chats.firstIndex(where: { $0.id == id }) else { return }
         update(&chats[index])
         chats[index].updatedAt = Date()
+        scheduleSave()
+    }
+
+    private func scheduleSave() {
+        let snapshot = makePersistedState()
+
+        saveTask?.cancel()
+        saveTask = Task { [persistence] in
+            try? await Task.sleep(for: .milliseconds(350))
+            try? persistence.saveState(snapshot)
+        }
+    }
+
+    private func saveNow() {
+        saveTask?.cancel()
+        saveTask = nil
+        try? persistence.saveState(makePersistedState())
+    }
+
+    private func makePersistedState() -> PersistedChatState {
+        PersistedChatState(
+            selectedChatID: selectedChatID,
+            chats: chats.map { chat in
+                var persistedChat = chat
+                if persistedChat.isGenerating,
+                   persistedChat.messages.last?.role == .assistant {
+                    persistedChat.messages.removeLast()
+                }
+                persistedChat.isGenerating = false
+                persistedChat.refreshDerivedState()
+                return persistedChat
+            }
+        )
+    }
+
+    private static func loadInitialState(from persistence: any ChatPersistenceProtocol) -> PersistedChatState? {
+        do {
+            guard let persistedState = try persistence.loadState() else {
+                return nil
+            }
+
+            let restoredChats = persistedState.chats.map { chat in
+                var restoredChat = chat
+                restoredChat.isGenerating = false
+                restoredChat.refreshDerivedState()
+                return restoredChat
+            }
+
+            guard !restoredChats.isEmpty else {
+                return nil
+            }
+
+            let selectedChatID = restoredChats.contains(where: { $0.id == persistedState.selectedChatID })
+                ? persistedState.selectedChatID
+                : restoredChats[0].id
+
+            return PersistedChatState(
+                version: persistedState.version,
+                selectedChatID: selectedChatID,
+                chats: restoredChats
+            )
+        } catch {
+            return nil
+        }
     }
 }

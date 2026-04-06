@@ -2,17 +2,34 @@ import SwiftUI
 
 @main
 struct UlogApp: App {
-    @State private var apfelService = ApfelService()
+    @State private var viewModel: ChatViewModel
+
+    init() {
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+            _viewModel = State(initialValue: Self.makeUITestViewModel())
+        } else {
+            _viewModel = State(initialValue: ChatViewModel(apfelService: ApfelService()))
+        }
+    }
 
     var body: some Scene {
         WindowGroup("Ulog") {
-            if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
-                ContentView(viewModel: Self.makeUITestViewModel())
-            } else {
-                ContentView(apfelService: apfelService)
-            }
+            ContentView(viewModel: viewModel)
         }
         .defaultSize(width: 600, height: 700)
+        .commands {
+            CommandMenu("Chats") {
+                Button("New Chat") {
+                    viewModel.createChat()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+
+                Button("Clear All History") {
+                    viewModel.clearAllHistory()
+                }
+                .disabled(!viewModel.canDeleteChats && !viewModel.canClearSelectedChat)
+            }
+        }
     }
 
     private static func makeUITestViewModel() -> ChatViewModel {
@@ -21,7 +38,8 @@ struct UlogApp: App {
 
         return ChatViewModel(
             apfelService: apfelService,
-            chatClient: UITestChatClient()
+            chatClient: UITestChatClient(),
+            persistence: InMemoryChatPersistence()
         )
     }
 }
@@ -55,5 +73,17 @@ private final class UITestChatClient: ChatClientProtocol {
         let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = trimmedInput.isEmpty ? "Ready for input." : "Stub reply to: \(trimmedInput)"
         return text.map(String.init)
+    }
+}
+
+private final class InMemoryChatPersistence: ChatPersistenceProtocol {
+    private var state: PersistedChatState?
+
+    func loadState() throws -> PersistedChatState? {
+        state
+    }
+
+    func saveState(_ state: PersistedChatState) throws {
+        self.state = state
     }
 }

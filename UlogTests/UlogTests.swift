@@ -41,6 +41,50 @@ struct ChatViewModelTests {
     }
 
     @MainActor
+    @Test("Saved drafts are restored on next launch")
+    func savedDraftsAreRestoredOnNextLaunch() {
+        let persistence = TestChatPersistence()
+        let viewModel = makeViewModel(persistence: persistence)
+
+        viewModel.inputText = "Unsent draft"
+        viewModel.saveNowForTesting()
+
+        let restoredViewModel = makeViewModel(persistence: persistence)
+
+        #expect(restoredViewModel.chats.count == 1)
+        #expect(restoredViewModel.inputText == "Unsent draft")
+    }
+
+    @MainActor
+    @Test("In-flight assistant replies are not persisted")
+    func inflightAssistantRepliesAreNotPersisted() {
+        let persistence = TestChatPersistence()
+        let viewModel = makeViewModel(persistence: persistence)
+
+        let chatID = viewModel.selectedChatID
+        viewModel.chats[0] = ChatSession(
+            id: chatID,
+            title: "Test",
+            messages: [
+                ChatMessage(role: .user, content: "Hello"),
+                ChatMessage(role: .assistant, content: "Partial", timestamp: Date())
+            ],
+            draft: "",
+            isGenerating: true,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+
+        viewModel.saveNowForTesting()
+
+        let restoredViewModel = makeViewModel(persistence: persistence)
+        #expect(restoredViewModel.messages.count == 1)
+        #expect(restoredViewModel.messages[0].role == .user)
+        #expect(restoredViewModel.messages[0].content == "Hello")
+        #expect(!restoredViewModel.isGenerating)
+    }
+
+    @MainActor
     @Test("Deleting the selected chat falls back to a remaining chat")
     func deletingSelectedChatFallsBackToRemainingChat() {
         let viewModel = makeViewModel()
@@ -121,10 +165,17 @@ struct ChatViewModelTests {
     }
 
     @MainActor
-    private func makeViewModel(chatClient: (any ChatClientProtocol)? = nil) -> ChatViewModel {
+    private func makeViewModel(
+        chatClient: (any ChatClientProtocol)? = nil,
+        persistence: (any ChatPersistenceProtocol)? = nil
+    ) -> ChatViewModel {
         let apfelService = ApfelService()
         apfelService.setStatusForTesting(.ready)
-        return ChatViewModel(apfelService: apfelService, chatClient: chatClient)
+        return ChatViewModel(
+            apfelService: apfelService,
+            chatClient: chatClient,
+            persistence: persistence ?? TestChatPersistence()
+        )
     }
 
     @MainActor
@@ -153,5 +204,17 @@ private final class StubChatClient: ChatClientProtocol {
             continuation.yield(response)
             continuation.finish()
         }
+    }
+}
+
+private final class TestChatPersistence: ChatPersistenceProtocol {
+    private(set) var state: PersistedChatState?
+
+    func loadState() throws -> PersistedChatState? {
+        state
+    }
+
+    func saveState(_ state: PersistedChatState) throws {
+        self.state = state
     }
 }
