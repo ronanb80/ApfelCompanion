@@ -10,8 +10,10 @@ final class UlogUITests: XCTestCase {
         let app = launchApplication()
         let inputField = app.textFields["Message Input"]
         let clearButton = app.descendants(matching: .button).matching(identifier: "chat.clear").firstMatch
+        let sidebar = app.splitGroups.descendants(matching: .any).matching(identifier: "chat.sidebar").firstMatch
 
         XCTAssertTrue(app.staticTexts["Start a conversation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
         XCTAssertTrue(inputField.isEnabled)
         XCTAssertFalse(clearButton.isEnabled)
     }
@@ -75,6 +77,25 @@ final class UlogUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Start a conversation"].waitForExistence(timeout: 5))
         XCTAssertFalse(clearButton.isEnabled)
         XCTAssertFalse(app.staticTexts["Clear this conversation"].exists)
+    }
+
+    @MainActor
+    func testCreateNewChatShowsFreshConversation() throws {
+        let app = launchApplication()
+        let inputField = app.textFields["Message Input"]
+        let newChatButton = app.descendants(matching: .button).matching(identifier: "chat.new").firstMatch
+
+        XCTAssertTrue(inputField.waitForExistence(timeout: 5))
+        inputField.click()
+        inputField.typeText("First chat")
+        app.buttons["Send Message"].click()
+
+        XCTAssertTrue(app.staticTexts["Stub reply to: First chat"].waitForExistence(timeout: 10))
+
+        newChatButton.click()
+
+        XCTAssertTrue(app.staticTexts["Start a conversation"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Stub reply to: First chat"].exists)
     }
 
     @MainActor

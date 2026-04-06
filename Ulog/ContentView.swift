@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var viewModel: ChatViewModel
+    @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
 
     init(apfelService: ApfelService) {
         _viewModel = State(initialValue: ChatViewModel(apfelService: apfelService))
@@ -12,24 +13,51 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if viewModel.messages.isEmpty {
-                emptyState
-            } else {
-                MessageListView(messages: viewModel.messages, isGenerating: viewModel.isGenerating)
+        @Bindable var bindableViewModel = viewModel
+
+        return NavigationSplitView(columnVisibility: $sidebarVisibility) {
+            List(selection: $bindableViewModel.selectedChatID) {
+                ForEach(viewModel.chats) { chat in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(chat.displayTitle)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text(chat.previewText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(.vertical, 4)
+                    .tag(chat.id)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("chat.session.\(chat.id.uuidString)")
+                }
+                .onDelete { offsets in
+                    viewModel.deleteChats(at: offsets)
+                }
             }
+            .navigationTitle("Chats")
+            .accessibilityIdentifier("chat.sidebar")
+        } detail: {
+            VStack(spacing: 0) {
+                if viewModel.messages.isEmpty {
+                    emptyState
+                } else {
+                    MessageListView(messages: viewModel.messages, isGenerating: viewModel.isGenerating)
+                }
 
-            Divider()
+                Divider()
 
-            InputBarView(
-                text: $viewModel.inputText,
-                isGenerating: viewModel.isGenerating,
-                isServerReady: viewModel.serverStatus == .ready,
-                onSend: { viewModel.sendMessage() },
-                onStop: { viewModel.stopGeneration() }
-            )
+                InputBarView(
+                    text: $bindableViewModel.inputText,
+                    isGenerating: viewModel.isGenerating,
+                    isServerReady: viewModel.serverStatus == .ready,
+                    onSend: { viewModel.sendMessage() },
+                    onStop: { viewModel.stopGeneration() }
+                )
 
-            StatusIndicator(status: viewModel.serverStatus)
+                StatusIndicator(status: viewModel.serverStatus)
+            }
         }
         .frame(minWidth: 500, minHeight: 400)
         .accessibilityIdentifier("chat.root")
@@ -37,6 +65,15 @@ struct ContentView: View {
             await viewModel.startServer()
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: { viewModel.createChat() }) {
+                    Image(systemName: "square.and.pencil")
+                }
+                .help("New chat")
+                .accessibilityLabel("New Chat")
+                .accessibilityIdentifier("chat.new")
+            }
+
             ToolbarItem(placement: .primaryAction) {
                 Button(action: { viewModel.clearChat() }) {
                     Image(systemName: "trash")
