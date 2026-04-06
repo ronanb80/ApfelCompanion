@@ -6,6 +6,8 @@ struct MessageBubbleView: View {
     var onCopy: (() -> Void)?
     var onRegenerate: (() -> Void)?
     var onEditAndResend: (() -> Void)?
+    @State private var showsCopyConfirmation = false
+    @State private var copyFeedbackTask: Task<Void, Never>?
 
     var body: some View {
         HStack {
@@ -37,6 +39,10 @@ struct MessageBubbleView: View {
                         : Color.secondary.opacity(0.1)
                 )
                 .cornerRadius(12)
+
+                if message.role == .assistant, !message.content.isEmpty {
+                    assistantActions
+                }
             }
             .contextMenu {
                 if let onCopy {
@@ -55,6 +61,44 @@ struct MessageBubbleView: View {
             }
 
             if message.role == .assistant { Spacer(minLength: 60) }
+        }
+    }
+
+    @ViewBuilder
+    private var assistantActions: some View {
+        HStack(spacing: 8) {
+            if let onCopy {
+                Button(action: {
+                    onCopy()
+                    showCopyFeedback()
+                }) {
+                    Label(
+                        showsCopyConfirmation ? "Copied" : "Copy",
+                        systemImage: showsCopyConfirmation ? "checkmark" : "doc.on.doc"
+                    )
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .accessibilityLabel("Copy Assistant Message")
+                .accessibilityIdentifier("chat.assistantCopy")
+                .accessibilityValue(showsCopyConfirmation ? "copied" : "idle")
+                .help(showsCopyConfirmation ? "Copied" : "Copy response")
+            }
+        }
+    }
+
+    private func showCopyFeedback() {
+        copyFeedbackTask?.cancel()
+        showsCopyConfirmation = true
+
+        copyFeedbackTask = Task {
+            try? await Task.sleep(for: .seconds(1.25))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                showsCopyConfirmation = false
+                copyFeedbackTask = nil
+            }
         }
     }
 }

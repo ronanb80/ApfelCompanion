@@ -114,6 +114,32 @@ final class ApfelCompanionUITests: XCTestCase {
     }
 
     @MainActor
+    func testCopyButtonShowsTemporaryCopiedFeedback() throws {
+        let app = launchApplication()
+        let inputField = messageInput(in: app)
+        let copyButton = app.descendants(matching: .button).matching(identifier: "chat.assistantCopy").firstMatch
+
+        XCTAssertTrue(inputField.waitForExistence(timeout: 5))
+        inputField.click()
+        inputField.typeText("Copy this reply")
+        app.buttons["Send Message"].click()
+
+        XCTAssertTrue(app.staticTexts["Stub reply to: Copy this reply"].waitForExistence(timeout: 10))
+        XCTAssertTrue(copyButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(copyButton.value as? String, "idle")
+
+        copyButton.click()
+
+        XCTAssertEqual(copyButton.value as? String, "copied")
+
+        let copiedResetExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "idle"),
+            object: copyButton
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [copiedResetExpectation], timeout: 3), .completed)
+    }
+
+    @MainActor
     func testShiftReturnAddsNewlineBeforeSending() throws {
         let app = launchApplication()
         let inputField = messageInput(in: app)
