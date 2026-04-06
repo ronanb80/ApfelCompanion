@@ -59,17 +59,65 @@ struct ChatViewModelTests {
     }
 
     @MainActor
-    @Test("Deleting the last remaining chat recreates an empty chat")
-    func deletingLastRemainingChatRecreatesEmptyChat() {
+    @Test("Trash action is disabled for a single empty chat")
+    func trashActionIsDisabledForSingleEmptyChat() {
+        let viewModel = makeViewModel()
+
+        #expect(!viewModel.canTrashSelectedChat)
+    }
+
+    @MainActor
+    @Test("Deleting the last remaining chat is ignored")
+    func deletingLastRemainingChatIsIgnored() {
         let viewModel = makeViewModel()
         let originalChatID = viewModel.selectedChatID
 
         viewModel.deleteChats(at: IndexSet(integer: 0))
 
         #expect(viewModel.chats.count == 1)
-        #expect(viewModel.selectedChatID != originalChatID)
+        #expect(viewModel.selectedChatID == originalChatID)
         #expect(viewModel.messages.isEmpty)
         #expect(viewModel.selectedChat.displayTitle == "New Chat")
+    }
+
+    @MainActor
+    @Test("Trash action deletes the selected chat when another chat exists")
+    func trashActionDeletesSelectedChatWhenAnotherChatExists() {
+        let viewModel = makeViewModel()
+        let originalChatID = viewModel.selectedChatID
+
+        viewModel.createChat()
+        let newChatID = viewModel.selectedChatID
+
+        #expect(viewModel.canTrashSelectedChat)
+
+        viewModel.trashSelectedChat()
+
+        #expect(viewModel.chats.count == 1)
+        #expect(viewModel.selectedChatID == originalChatID)
+        #expect(viewModel.selectedChatID != newChatID)
+        #expect(!viewModel.canTrashSelectedChat)
+    }
+
+    @MainActor
+    @Test("Trash action clears the only chat when it has content")
+    func trashActionClearsOnlyChatWhenItHasContent() async {
+        let client = StubChatClient(response: "Stubbed reply")
+        let viewModel = makeViewModel(chatClient: client)
+
+        viewModel.inputText = "Solo conversation"
+        viewModel.sendMessage()
+        await waitForMessageCount(in: viewModel, expectedCount: 2)
+
+        #expect(viewModel.canTrashSelectedChat)
+        #expect(viewModel.chats.count == 1)
+
+        viewModel.trashSelectedChat()
+
+        #expect(viewModel.chats.count == 1)
+        #expect(viewModel.messages.isEmpty)
+        #expect(viewModel.inputText.isEmpty)
+        #expect(!viewModel.canTrashSelectedChat)
     }
 
     @MainActor

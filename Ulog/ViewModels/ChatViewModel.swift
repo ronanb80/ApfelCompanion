@@ -40,6 +40,18 @@ class ChatViewModel {
         selectedChat.isGenerating
     }
 
+    var canDeleteChats: Bool {
+        chats.count > 1
+    }
+
+    var canClearSelectedChat: Bool {
+        !messages.isEmpty || !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var canTrashSelectedChat: Bool {
+        canDeleteChats || canClearSelectedChat
+    }
+
     init(apfelService: ApfelService, chatClient: (any ChatClientProtocol)? = nil) {
         self.apfelService = apfelService
         self.chatClient = chatClient ?? ChatClient(baseURL: apfelService.baseURL)
@@ -68,7 +80,12 @@ class ChatViewModel {
     }
 
     func deleteChats(at offsets: IndexSet) {
-        let removedIDs = offsets.map { chats[$0].id }
+        guard canDeleteChats else { return }
+
+        let safeOffsets = IndexSet(offsets.filter { chats.indices.contains($0) })
+        guard !safeOffsets.isEmpty else { return }
+
+        let removedIDs = safeOffsets.map { chats[$0].id }
         let deletedSelectedChat = removedIDs.contains(selectedChatID)
         let deletedGeneratingChat = generatingChatID.map { removedIDs.contains($0) } ?? false
 
@@ -77,18 +94,24 @@ class ChatViewModel {
         }
 
         chats = chats.enumerated().compactMap { index, chat in
-            offsets.contains(index) ? nil : chat
-        }
-
-        if chats.isEmpty {
-            let chat = ChatSession()
-            chats = [chat]
-            selectedChatID = chat.id
-            return
+            safeOffsets.contains(index) ? nil : chat
         }
 
         if deletedSelectedChat {
             selectedChatID = chats[0].id
+        }
+    }
+
+    func deleteSelectedChat() {
+        guard let selectedIndex = chats.firstIndex(where: { $0.id == selectedChatID }) else { return }
+        deleteChats(at: IndexSet(integer: selectedIndex))
+    }
+
+    func trashSelectedChat() {
+        if canDeleteChats {
+            deleteSelectedChat()
+        } else {
+            clearChat()
         }
     }
 

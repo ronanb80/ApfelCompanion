@@ -75,12 +75,12 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .primaryAction) {
-                Button(action: { viewModel.clearChat() }) {
+                Button(action: { viewModel.trashSelectedChat() }) {
                     Image(systemName: "trash")
                 }
-                .disabled(viewModel.messages.isEmpty)
-                .help("Clear chat")
-                .accessibilityLabel("Clear Chat")
+                .disabled(!viewModel.canTrashSelectedChat)
+                .help(viewModel.canDeleteChats ? "Delete selected chat" : "Clear chat")
+                .accessibilityLabel("Delete Chat")
                 .accessibilityIdentifier("chat.clear")
             }
         }
