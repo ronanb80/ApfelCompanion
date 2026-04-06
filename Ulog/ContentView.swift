@@ -66,18 +66,20 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: { viewModel.createChat() }) {
-                    Image(systemName: "square.and.pencil")
-                }
+                Button(
+                    action: { viewModel.createChat() },
+                    label: { Image(systemName: "square.and.pencil") }
+                )
                 .help("New chat")
                 .accessibilityLabel("New Chat")
                 .accessibilityIdentifier("chat.new")
             }
 
             ToolbarItem(placement: .primaryAction) {
-                Button(action: { viewModel.trashSelectedChat() }) {
-                    Image(systemName: "trash")
-                }
+                Button(
+                    action: { viewModel.trashSelectedChat() },
+                    label: { Image(systemName: "trash") }
+                )
                 .disabled(!viewModel.canTrashSelectedChat)
                 .help(viewModel.canDeleteChats ? "Delete selected chat" : "Clear chat")
                 .accessibilityLabel("Delete Chat")

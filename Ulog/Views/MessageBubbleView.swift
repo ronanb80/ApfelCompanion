@@ -22,7 +22,9 @@ struct MessageBubbleView: View {
                     } else {
                         Text(message.content)
                             .textSelection(.enabled)
-                            .accessibilityIdentifier(message.role == .user ? "chat.userMessage" : "chat.assistantMessage")
+                            .accessibilityIdentifier(
+                                message.role == .user ? "chat.userMessage" : "chat.assistantMessage"
+                            )
                     }
                 }
                 .padding(10)

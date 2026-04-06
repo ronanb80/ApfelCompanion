@@ -18,7 +18,16 @@ class ApfelService {
     private let binaryPath: String
 
     var baseURL: URL {
-        URL(string: "http://localhost:\(port)")!
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = "localhost"
+        components.port = port
+
+        guard let url = components.url else {
+            preconditionFailure("Invalid base URL configuration for port \(port)")
+        }
+
+        return url
     }
 
     init(port: Int = 11438) {

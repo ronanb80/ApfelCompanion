@@ -1,6 +1,6 @@
-# Ulóg
+# Ulog
 
-A native macOS chat client for running LLMs locally via [apfel](https://github.com/alexscheid/apfel).
+A native macOS chat client for running LLMs locally via [apfel](https://github.com/Arthur-Ficial/apfel?tab=readme-ov-file).
 
 ## Features
 

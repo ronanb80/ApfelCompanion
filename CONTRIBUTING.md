@@ -71,26 +71,6 @@ make test
 
 > **Note:** You'll need an `ExportOptions.plist` for the archive export. Xcode generates one when you manually archive and export for the first time via Organizer.
 
-## Project Structure
-
-```
-Ulog/
-├── Models/
-│   └── ChatMessage.swift          # Message data model
-├── Services/
-│   ├── ApfelService.swift         # apfel process lifecycle management
-│   └── ChatClient.swift           # HTTP + SSE streaming client
-├── ViewModels/
-│   └── ChatViewModel.swift        # Chat state and business logic
-├── Views/
-│   ├── MessageBubbleView.swift    # Chat message bubble
-│   ├── MessageListView.swift      # Scrollable message list
-│   ├── InputBarView.swift         # Text input and send/stop buttons
-│   └── StatusIndicator.swift      # apfel connection status dot
-├── ContentView.swift              # Main window layout
-└── UlogApp.swift                  # App entry point
-```
-
 ## Architecture
 
 The app follows a straightforward MVVM pattern:
