@@ -1,6 +1,6 @@
-# Ulog
+# Apfel Companion
 
-A native macOS chat client for running LLMs locally via [apfel](https://github.com/Arthur-Ficial/apfel?tab=readme-ov-file).
+Apfel Companion is a native macOS chat client for running LLMs locally via [apfel](https://github.com/Arthur-Ficial/apfel?tab=readme-ov-file).
 
 ## Features
 

@@ -1,4 +1,4 @@
-# Contributing to Ulog
+# Contributing to Apfel Companion
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@
 
 ### Building
 
-Open `Ulog.xcodeproj` in Xcode and build with `Cmd+B`, or from the terminal:
+Open `ApfelCompanion.xcodeproj` in Xcode and build with `Cmd+B`, or from the terminal:
 
 ```bash
 make build
@@ -66,7 +66,7 @@ make test
 3. This will:
    - Clean previous builds
    - Archive the app
-   - Export and zip `Ulog.app`
+   - Export and zip `ApfelCompanion.app`
    - Create a GitHub release with the zip attached
 
 > **Note:** You'll need an `ExportOptions.plist` for the archive export. Xcode generates one when you manually archive and export for the first time via Organizer.

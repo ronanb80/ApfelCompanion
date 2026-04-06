@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct UlogApp: App {
+struct ApfelCompanionApp: App {
     @State private var viewModel: ChatViewModel
 
     init() {
@@ -13,7 +13,7 @@ struct UlogApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Ulog") {
+        WindowGroup("Apfel Companion") {
             ContentView(viewModel: viewModel)
         }
         .defaultSize(width: 600, height: 700)

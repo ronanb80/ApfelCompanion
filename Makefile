@@ -1,7 +1,7 @@
-SCHEME = Ulog
-PROJECT = Ulog.xcodeproj
+SCHEME = ApfelCompanion
+PROJECT = ApfelCompanion.xcodeproj
 DESTINATION = 'platform=macOS'
-ARCHIVE_PATH = build/Ulog.xcarchive
+ARCHIVE_PATH = build/ApfelCompanion.xcarchive
 EXPORT_PATH = build/export
 
 .PHONY: build test lint clean archive release
@@ -47,5 +47,5 @@ endif
 		-archivePath $(ARCHIVE_PATH) \
 		-exportPath $(EXPORT_PATH) \
 		-exportOptionsPlist ExportOptions.plist
-	cd $(EXPORT_PATH) && zip -r ../../Ulog.zip Ulog.app
-	gh release create v$(VERSION) Ulog.zip --title "v$(VERSION)" --generate-notes
+	cd $(EXPORT_PATH) && zip -r ../../ApfelCompanion.zip ApfelCompanion.app
+	gh release create v$(VERSION) ApfelCompanion.zip --title "v$(VERSION)" --generate-notes

@@ -1,6 +1,6 @@
 import XCTest
 
-final class UlogUITests: XCTestCase {
+final class ApfelCompanionUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

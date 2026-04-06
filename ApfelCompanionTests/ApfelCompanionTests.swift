@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import Ulog
+@testable import ApfelCompanion
 
 @Suite("Chat View Model")
 struct ChatViewModelTests {

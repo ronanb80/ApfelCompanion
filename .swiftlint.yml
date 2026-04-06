@@ -1,9 +1,9 @@
 included:
-  - Ulog
+  - ApfelCompanion
 
 excluded:
-  - UlogTests
-  - UlogUITests
+  - ApfelCompanionTests
+  - ApfelCompanionUITests
 
 disabled_rules:
   - trailing_comma

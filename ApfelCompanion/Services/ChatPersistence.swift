@@ -77,8 +77,27 @@ final class FileChatPersistence: ChatPersistenceProtocol {
 
     private static func defaultFileURL(fileManager: FileManager) -> URL {
         let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return appSupportURL
+        let currentDirectoryURL = appSupportURL.appendingPathComponent("ApfelCompanion", isDirectory: true)
+        let legacyFileURL = appSupportURL
             .appendingPathComponent("Ulog", isDirectory: true)
             .appendingPathComponent("chat-state.json")
+        let currentFileURL = currentDirectoryURL.appendingPathComponent("chat-state.json")
+
+        if fileManager.fileExists(atPath: currentFileURL.path) {
+            return currentFileURL
+        }
+
+        if fileManager.fileExists(atPath: legacyFileURL.path) {
+            do {
+                try fileManager.createDirectory(at: currentDirectoryURL, withIntermediateDirectories: true)
+                try fileManager.moveItem(at: legacyFileURL, to: currentFileURL)
+                return currentFileURL
+            } catch {
+                // Keep reading from the legacy location if migration fails.
+                return legacyFileURL
+            }
+        }
+
+        return currentFileURL
     }
 }
