@@ -8,20 +8,20 @@ final class ApfelCompanionUITests: XCTestCase {
     @MainActor
     func testLaunchShowsReadyStateAndEmptyConversation() throws {
         let app = launchApplication()
-        let inputField = app.textFields["Message Input"]
+        let inputField = messageInput(in: app)
         let trashButton = app.descendants(matching: .button).matching(identifier: "chat.clear").firstMatch
         let sidebar = app.splitGroups.descendants(matching: .any).matching(identifier: "chat.sidebar").firstMatch
 
         XCTAssertTrue(app.staticTexts["Start a conversation"].waitForExistence(timeout: 5))
         XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
-        XCTAssertTrue(inputField.isEnabled)
+        XCTAssertTrue(inputField.waitForExistence(timeout: 5))
         XCTAssertFalse(trashButton.isEnabled)
     }
 
     @MainActor
     func testSendMessageStreamsAssistantReply() throws {
         let app = launchApplication()
-        let inputField = app.textFields["Message Input"]
+        let inputField = messageInput(in: app)
         let trashButton = app.descendants(matching: .button).matching(identifier: "chat.clear").firstMatch
 
         XCTAssertTrue(inputField.waitForExistence(timeout: 5))
@@ -39,7 +39,7 @@ final class ApfelCompanionUITests: XCTestCase {
     @MainActor
     func testStopGenerationKeepsPartialAssistantReply() throws {
         let app = launchApplication()
-        let inputField = app.textFields["Message Input"]
+        let inputField = messageInput(in: app)
         let finalReply = "Stub reply to: Please stream a longer response so the stop button can interrupt it"
 
         XCTAssertTrue(inputField.waitForExistence(timeout: 5))
@@ -61,7 +61,7 @@ final class ApfelCompanionUITests: XCTestCase {
     @MainActor
     func testClearChatRestoresEmptyState() throws {
         let app = launchApplication()
-        let inputField = app.textFields["Message Input"]
+        let inputField = messageInput(in: app)
         let trashButton = app.descendants(matching: .button).matching(identifier: "chat.clear").firstMatch
 
         XCTAssertTrue(inputField.waitForExistence(timeout: 5))
@@ -82,7 +82,7 @@ final class ApfelCompanionUITests: XCTestCase {
     @MainActor
     func testCreateNewChatShowsFreshConversation() throws {
         let app = launchApplication()
-        let inputField = app.textFields["Message Input"]
+        let inputField = messageInput(in: app)
         let newChatButton = app.descendants(matching: .button).matching(identifier: "chat.new").firstMatch
         let trashButton = app.descendants(matching: .button).matching(identifier: "chat.clear").firstMatch
 
@@ -101,6 +101,24 @@ final class ApfelCompanionUITests: XCTestCase {
     }
 
     @MainActor
+    func testShiftReturnAddsNewlineBeforeSending() throws {
+        let app = launchApplication()
+        let inputField = messageInput(in: app)
+
+        XCTAssertTrue(inputField.waitForExistence(timeout: 5))
+        inputField.click()
+        inputField.typeText("First line")
+        inputField.typeKey(.return, modifierFlags: [.shift])
+        inputField.typeText("Second line")
+        inputField.typeKey(.return, modifierFlags: [])
+
+        XCTAssertTrue(app.staticTexts["First line\nSecond line"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.staticTexts["Stub reply to: First line\nSecond line"].waitForExistence(timeout: 10)
+        )
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             launchApplication().terminate()
@@ -113,5 +131,10 @@ final class ApfelCompanionUITests: XCTestCase {
         app.launchArguments = ["--ui-testing"]
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func messageInput(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: "chat.input").firstMatch
     }
 }

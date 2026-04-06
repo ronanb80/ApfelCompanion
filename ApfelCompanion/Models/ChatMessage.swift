@@ -17,6 +17,19 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         self.content = content
         self.timestamp = timestamp
     }
+
+    var renderedContent: AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+
+        if let parsed = try? AttributedString(markdown: content, options: options) {
+            return parsed
+        }
+
+        return AttributedString(content)
+    }
 }
 
 struct ChatSession: Identifiable, Equatable, Codable {
