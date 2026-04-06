@@ -1,17 +1,13 @@
-//
-//  UlogApp.swift
-//  Ulog
-//
-//  Created by Ronan Brigdale on 06/04/2026.
-//
-
 import SwiftUI
 
 @main
 struct UlogApp: App {
+    @State private var apfelService = ApfelService()
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        WindowGroup("Ulog") {
+            ContentView(apfelService: apfelService)
         }
+        .defaultSize(width: 600, height: 700)
     }
 }
