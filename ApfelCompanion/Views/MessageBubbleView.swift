@@ -68,16 +68,19 @@ struct MessageBubbleView: View {
     private var assistantActions: some View {
         HStack(spacing: 8) {
             if let onCopy {
-                Button(action: {
-                    onCopy()
-                    showCopyFeedback()
-                }) {
-                    Label(
-                        showsCopyConfirmation ? "Copied" : "Copy",
-                        systemImage: showsCopyConfirmation ? "checkmark" : "doc.on.doc"
-                    )
-                        .labelStyle(.titleAndIcon)
-                }
+                Button(
+                    action: {
+                        onCopy()
+                        showCopyFeedback()
+                    },
+                    label: {
+                        Label(
+                            showsCopyConfirmation ? "Copied" : "Copy",
+                            systemImage: showsCopyConfirmation ? "checkmark" : "doc.on.doc"
+                        )
+                            .labelStyle(.titleAndIcon)
+                    }
+                )
                 .buttonStyle(.borderless)
                 .font(.caption)
                 .accessibilityLabel("Copy Assistant Message")

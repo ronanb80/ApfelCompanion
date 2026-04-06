@@ -258,58 +258,6 @@ class ChatViewModel {
         }
     }
 
-    private func appendPlaceholderAndStream(chatID: ChatSession.ID) {
-        let placeholder = ChatMessage(role: .assistant, content: "")
-        updateChat(id: chatID) { chat in
-            chat.messages.append(placeholder)
-            chat.isGenerating = true
-            chat.refreshDerivedState()
-        }
-        generatingChatID = chatID
-
-        let history = Array(chat(for: chatID).messages.dropLast())
-        streamResponse(chatID: chatID, history: history)
-    }
-
-    private func streamResponse(chatID: ChatSession.ID, history: [ChatMessage]) {
-        currentTask = Task {
-            do {
-                let options = ChatRequestOptions(
-                    systemPrompt: settings.systemPrompt.isEmpty ? nil : settings.systemPrompt,
-                    temperature: settings.temperature,
-                    maxTokens: settings.maxTokens
-                )
-                let stream = chatClient.sendMessage(messages: history, options: options)
-                for try await token in stream {
-                    updateChat(id: chatID) { chat in
-                        if let index = chat.messages.indices.last,
-                           chat.messages[index].role == .assistant {
-                            chat.messages[index].content += token
-                            chat.refreshDerivedState()
-                        }
-                    }
-                }
-            } catch {
-                updateChat(id: chatID) { chat in
-                    if let index = chat.messages.indices.last,
-                       chat.messages[index].role == .assistant,
-                       chat.messages[index].content.isEmpty {
-                        chat.messages[index].content = "Error: \(error.localizedDescription)"
-                        chat.refreshDerivedState()
-                    }
-                }
-            }
-            updateChat(id: chatID) { chat in
-                chat.isGenerating = false
-                chat.refreshDerivedState()
-            }
-            if generatingChatID == chatID {
-                generatingChatID = nil
-            }
-            currentTask = nil
-        }
-    }
-
     func stopGeneration() {
         currentTask?.cancel()
         currentTask = nil
@@ -349,8 +297,64 @@ class ChatViewModel {
     func saveNowForTesting() {
         saveNow()
     }
+}
 
-    private var selectedChatIndex: Int {
+private extension ChatViewModel {
+    func appendPlaceholderAndStream(chatID: ChatSession.ID) {
+        let placeholder = ChatMessage(role: .assistant, content: "")
+        updateChat(id: chatID) { chat in
+            chat.messages.append(placeholder)
+            chat.isGenerating = true
+            chat.refreshDerivedState()
+        }
+        generatingChatID = chatID
+
+        let history = Array(chat(for: chatID).messages.dropLast())
+        streamResponse(chatID: chatID, history: history)
+    }
+
+    func streamResponse(chatID: ChatSession.ID, history: [ChatMessage]) {
+        currentTask = Task {
+            do {
+                let options = ChatRequestOptions(
+                    systemPrompt: settings.systemPrompt.isEmpty ? nil : settings.systemPrompt,
+                    temperature: settings.temperature,
+                    maxTokens: settings.maxTokens
+                )
+                let stream = chatClient.sendMessage(messages: history, options: options)
+                for try await token in stream {
+                    updateChat(id: chatID) { chat in
+                        if let index = chat.messages.indices.last,
+                           chat.messages[index].role == .assistant {
+                            chat.messages[index].content += token
+                            chat.refreshDerivedState()
+                        }
+                    }
+                }
+            } catch {
+                updateChat(id: chatID) { chat in
+                    if let index = chat.messages.indices.last,
+                       chat.messages[index].role == .assistant,
+                       chat.messages[index].content.isEmpty {
+                        chat.messages[index].content = "Error: \(error.localizedDescription)"
+                        chat.refreshDerivedState()
+                    }
+                }
+            }
+            updateChat(id: chatID) { chat in
+                chat.isGenerating = false
+                chat.refreshDerivedState()
+            }
+            if generatingChatID == chatID {
+                generatingChatID = nil
+            }
+            currentTask = nil
+        }
+    }
+}
+
+private extension ChatViewModel {
+    var selectedChatIndex: Int {
         if let index = chats.firstIndex(where: { $0.id == selectedChatID }) {
             return index
         }
@@ -361,28 +365,30 @@ class ChatViewModel {
         return 0
     }
 
-    private func chat(for id: ChatSession.ID) -> ChatSession {
+    func chat(for id: ChatSession.ID) -> ChatSession {
         guard let chat = chats.first(where: { $0.id == id }) else {
             fatalError("Missing chat for id \(id)")
         }
         return chat
     }
 
-    private func updateSelectedChat(_ update: (inout ChatSession) -> Void) {
+    func updateSelectedChat(_ update: (inout ChatSession) -> Void) {
         let index = selectedChatIndex
         update(&chats[index])
         chats[index].updatedAt = Date()
         scheduleSave()
     }
 
-    private func updateChat(id: ChatSession.ID, _ update: (inout ChatSession) -> Void) {
+    func updateChat(id: ChatSession.ID, _ update: (inout ChatSession) -> Void) {
         guard let index = chats.firstIndex(where: { $0.id == id }) else { return }
         update(&chats[index])
         chats[index].updatedAt = Date()
         scheduleSave()
     }
+}
 
-    private func scheduleSave() {
+private extension ChatViewModel {
+    func scheduleSave() {
         let snapshot = makePersistedState()
 
         saveTask?.cancel()
@@ -392,13 +398,13 @@ class ChatViewModel {
         }
     }
 
-    private func saveNow() {
+    func saveNow() {
         saveTask?.cancel()
         saveTask = nil
         try? persistence.saveState(makePersistedState())
     }
 
-    private func makePersistedState() -> PersistedChatState {
+    func makePersistedState() -> PersistedChatState {
         PersistedChatState(
             selectedChatID: selectedChatID,
             chats: chats.map { chat in
@@ -414,57 +420,7 @@ class ChatViewModel {
         )
     }
 
-    private func readFileContent(url: URL) -> String? {
-        let maxSize = 100 * 1024 // 100KB limit
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessing { url.stopAccessingSecurityScopedResource() }
-        }
-
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let fileSize = attributes[.size] as? Int,
-              fileSize <= maxSize else {
-            return nil
-        }
-
-        if url.pathExtension.lowercased() == "pdf" {
-            return readPDFContent(url: url)
-        }
-
-        return try? String(contentsOf: url, encoding: .utf8)
-    }
-
-    private func readPDFContent(url: URL) -> String? {
-        #if canImport(PDFKit)
-        guard let document = PDFDocument(url: url) else {
-            return nil
-        }
-
-        let text = (0..<document.pageCount)
-            .compactMap { document.page(at: $0) }
-            .map { page in
-                let pageText = page.string?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                if !pageText.isEmpty {
-                    return pageText
-                }
-
-                let annotationText = page.annotations
-                    .compactMap(\.contents)
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                return annotationText
-            }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-
-        return text.isEmpty ? nil : text
-        #else
-        return nil
-        #endif
-    }
-
-    private static func loadInitialState(from persistence: any ChatPersistenceProtocol) -> PersistedChatState? {
+    static func loadInitialState(from persistence: any ChatPersistenceProtocol) -> PersistedChatState? {
         do {
             guard let persistedState = try persistence.loadState() else {
                 return nil
@@ -493,5 +449,57 @@ class ChatViewModel {
         } catch {
             return nil
         }
+    }
+}
+
+private extension ChatViewModel {
+    func readFileContent(url: URL) -> String? {
+        let maxSize = 100 * 1024 // 100KB limit
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessing { url.stopAccessingSecurityScopedResource() }
+        }
+
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let fileSize = attributes[.size] as? Int,
+              fileSize <= maxSize else {
+            return nil
+        }
+
+        if url.pathExtension.lowercased() == "pdf" {
+            return readPDFContent(url: url)
+        }
+
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    func readPDFContent(url: URL) -> String? {
+        #if canImport(PDFKit)
+        guard let document = PDFDocument(url: url) else {
+            return nil
+        }
+
+        let text = (0..<document.pageCount)
+            .compactMap { document.page(at: $0) }
+            .map { page in
+                let pageText = page.string?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !pageText.isEmpty {
+                    return pageText
+                }
+
+                let annotationText = page.annotations
+                    .compactMap(\.contents)
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return annotationText
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+
+        return text.isEmpty ? nil : text
+        #else
+        return nil
+        #endif
     }
 }

@@ -42,10 +42,13 @@ struct InputBarView: View {
             }
 
             HStack(spacing: 8) {
-                Button(action: { isShowingFilePicker = true }) {
-                    Image(systemName: "paperclip")
-                        .font(.title3)
-                }
+                Button(
+                    action: { isShowingFilePicker = true },
+                    label: {
+                        Image(systemName: "paperclip")
+                            .font(.title3)
+                    }
+                )
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .disabled(!isServerReady)
@@ -55,19 +58,25 @@ struct InputBarView: View {
                 composer
 
                 if isGenerating {
-                    Button(action: onStop) {
-                        Image(systemName: "stop.circle.fill")
-                            .font(.title2)
-                    }
+                    Button(
+                        action: onStop,
+                        label: {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.title2)
+                        }
+                    )
                     .buttonStyle(.plain)
                     .foregroundStyle(.red)
                     .accessibilityLabel("Stop Generation")
                     .accessibilityIdentifier("chat.stop")
                 } else {
-                    Button(action: onSend) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.title2)
-                    }
+                    Button(
+                        action: onSend,
+                        label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.title2)
+                        }
+                    )
                     .buttonStyle(.plain)
                     .foregroundStyle(Color.accentColor)
                     .disabled(!canSend)
@@ -256,10 +265,13 @@ private struct AttachmentChip: View {
             Text(fileName)
                 .font(.caption)
                 .lineLimit(1)
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.caption)
-            }
+            Button(
+                action: onRemove,
+                label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                }
+            )
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 8)
