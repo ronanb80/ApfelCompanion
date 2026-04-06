@@ -3,6 +3,9 @@ import SwiftUI
 struct MessageListView: View {
     let messages: [ChatMessage]
     let isGenerating: Bool
+    var onCopy: ((UUID) -> Void)?
+    var onRegenerate: ((UUID) -> Void)?
+    var onEditAndResend: ((UUID) -> Void)?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -11,7 +14,14 @@ struct MessageListView: View {
                     ForEach(messages) { message in
                         MessageBubbleView(
                             message: message,
-                            isGenerating: isGenerating && message.id == messages.last?.id
+                            isGenerating: isGenerating && message.id == messages.last?.id,
+                            onCopy: { onCopy?(message.id) },
+                            onRegenerate: message.role == .assistant
+                                ? { onRegenerate?(message.id) }
+                                : nil,
+                            onEditAndResend: message.role == .user
+                                ? { onEditAndResend?(message.id) }
+                                : nil
                         )
                             .id(message.id)
                     }

@@ -30,22 +30,34 @@ struct ApfelCompanionApp: App {
                 .disabled(!viewModel.canDeleteChats && !viewModel.canClearSelectedChat)
             }
         }
+
+        Settings {
+            SettingsView(viewModel: viewModel)
+        }
     }
 
     private static func makeUITestViewModel() -> ChatViewModel {
         let apfelService = ApfelService()
         apfelService.setStatusForTesting(.ready)
+        let settingsPersistence: any SettingsPersistenceProtocol
+
+        if let settingsPath = ProcessInfo.processInfo.environment["APFEL_UI_TEST_SETTINGS_PATH"] {
+            settingsPersistence = FileSettingsPersistence(fileURL: URL(fileURLWithPath: settingsPath))
+        } else {
+            settingsPersistence = FileSettingsPersistence()
+        }
 
         return ChatViewModel(
             apfelService: apfelService,
             chatClient: UITestChatClient(),
-            persistence: InMemoryChatPersistence()
+            persistence: InMemoryChatPersistence(),
+            settingsPersistence: settingsPersistence
         )
     }
 }
 
 private final class UITestChatClient: ChatClientProtocol {
-    func sendMessage(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func sendMessage(messages: [ChatMessage], options: ChatRequestOptions) -> AsyncThrowingStream<String, Error> {
         let response = Self.response(for: messages.last?.content ?? "")
 
         return AsyncThrowingStream { continuation in

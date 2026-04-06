@@ -3,19 +3,23 @@ import AppKit
 #endif
 import Foundation
 
+@MainActor
 @Observable
 class ChatViewModel {
     var chats: [ChatSession]
     var selectedChatID: ChatSession.ID
+    var settings: AppSettings
+    var pendingAttachments: [PendingAttachment] = []
 
-    private let apfelService: ApfelService
-    private let chatClient: any ChatClientProtocol
-    private let persistence: any ChatPersistenceProtocol
-    private var currentTask: Task<Void, Never>?
-    private var saveTask: Task<Void, Never>?
-    private var generatingChatID: ChatSession.ID?
+    @ObservationIgnored private let apfelService: ApfelService
+    @ObservationIgnored private let chatClient: any ChatClientProtocol
+    @ObservationIgnored private let persistence: any ChatPersistenceProtocol
+    @ObservationIgnored private let settingsPersistence: any SettingsPersistenceProtocol
+    @ObservationIgnored private var currentTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var generatingChatID: ChatSession.ID?
     #if canImport(AppKit)
-    private var terminationObserver: NSObjectProtocol?
+    @ObservationIgnored private nonisolated(unsafe) var terminationObserver: NSObjectProtocol?
     #endif
 
     var serverStatus: ApfelService.Status {
@@ -44,32 +48,29 @@ class ChatViewModel {
         }
     }
 
-    var isGenerating: Bool {
-        selectedChat.isGenerating
-    }
+    var isGenerating: Bool { selectedChat.isGenerating }
 
-    var canDeleteChats: Bool {
-        chats.count > 1
-    }
+    var canDeleteChats: Bool { chats.count > 1 }
 
     var canClearSelectedChat: Bool {
         !messages.isEmpty || !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var canTrashSelectedChat: Bool {
-        canDeleteChats || canClearSelectedChat
-    }
+    var canTrashSelectedChat: Bool { canDeleteChats || canClearSelectedChat }
 
     init(
         apfelService: ApfelService,
         chatClient: (any ChatClientProtocol)? = nil,
-        persistence: (any ChatPersistenceProtocol)? = nil
+        persistence: (any ChatPersistenceProtocol)? = nil,
+        settingsPersistence: (any SettingsPersistenceProtocol)? = nil
     ) {
         self.apfelService = apfelService
         self.chatClient = chatClient ?? ChatClient(baseURL: apfelService.baseURL)
         self.persistence = persistence ?? FileChatPersistence()
+        self.settingsPersistence = settingsPersistence ?? FileSettingsPersistence()
+        self.settings = (try? self.settingsPersistence.loadSettings()) ?? .default
 
-        if let restoredState = Self.loadInitialState(from: self.persistence) {
+        if let restoredState = ChatStateMapper.loadInitialState(from: self.persistence) {
             self.chats = restoredState.chats
             self.selectedChatID = restoredState.selectedChatID
         } else {
@@ -84,7 +85,9 @@ class ChatViewModel {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.saveNow()
+            Task { @MainActor [weak self] in
+                self?.saveNow()
+            }
         }
         #endif
     }
@@ -104,6 +107,23 @@ class ChatViewModel {
 
     func stopServer() {
         apfelService.stop()
+    }
+
+    func saveSettings() {
+        try? settingsPersistence.saveSettings(settings)
+    }
+
+    func addAttachments(urls: [URL]) {
+        for url in urls {
+            guard let content = AttachmentContentReader.readFileContent(url: url) else { continue }
+            pendingAttachments.append(
+                PendingAttachment(fileName: url.lastPathComponent, content: content)
+            )
+        }
+    }
+
+    func removeAttachment(id: UUID) {
+        pendingAttachments.removeAll { $0.id == id }
     }
 
     func createChat() {
@@ -159,8 +179,19 @@ class ChatViewModel {
 
     func sendMessage() {
         let chatID = selectedChatID
-        let text = selectedChat.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !selectedChat.isGenerating else { return }
+        let rawText = selectedChat.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawText.isEmpty, !selectedChat.isGenerating else { return }
+
+        // Build content with file attachments prepended
+        var contentParts: [String] = []
+        for attachment in pendingAttachments {
+            contentParts.append(
+                "--- File: \(attachment.fileName) ---\n\(attachment.content)\n--- End of \(attachment.fileName) ---"
+            )
+        }
+        contentParts.append(rawText)
+        let text = contentParts.joined(separator: "\n\n")
+        pendingAttachments.removeAll()
 
         let userMessage = ChatMessage(role: .user, content: text)
         updateChat(id: chatID) { chat in
@@ -168,46 +199,47 @@ class ChatViewModel {
             chat.draft = ""
         }
 
-        let assistantMessage = ChatMessage(role: .assistant, content: "")
+        appendPlaceholderAndStream(chatID: chatID)
+    }
+
+    func copyMessage(id: UUID) {
+        guard let message = selectedChat.messages.first(where: { $0.id == id }) else { return }
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(message.content, forType: .string)
+        #endif
+    }
+
+    func regenerateMessage(id: UUID) {
+        let chatID = selectedChatID
+        guard !selectedChat.isGenerating else { return }
+
+        guard let messageIndex = selectedChat.messages.firstIndex(where: { $0.id == id }),
+              selectedChat.messages[messageIndex].role == .assistant else { return }
+
         updateChat(id: chatID) { chat in
-            chat.messages.append(assistantMessage)
-            chat.isGenerating = true
-            chat.refreshDerivedState()
+            chat.messages.remove(at: messageIndex)
         }
-        generatingChatID = chatID
 
-        let history = Array(chat(for: chatID).messages.dropLast())
+        appendPlaceholderAndStream(chatID: chatID)
+    }
 
-        currentTask = Task {
-            do {
-                let stream = chatClient.sendMessage(messages: history)
-                for try await token in stream {
-                    updateChat(id: chatID) { chat in
-                        if let index = chat.messages.indices.last,
-                           chat.messages[index].role == .assistant {
-                            chat.messages[index].content += token
-                            chat.refreshDerivedState()
-                        }
-                    }
-                }
-            } catch {
-                updateChat(id: chatID) { chat in
-                    if let index = chat.messages.indices.last,
-                       chat.messages[index].role == .assistant,
-                       chat.messages[index].content.isEmpty {
-                        chat.messages[index].content = "Error: \(error.localizedDescription)"
-                        chat.refreshDerivedState()
-                    }
-                }
-            }
-            updateChat(id: chatID) { chat in
-                chat.isGenerating = false
-                chat.refreshDerivedState()
-            }
-            if generatingChatID == chatID {
-                generatingChatID = nil
-            }
-            currentTask = nil
+    func editAndResend(id: UUID) {
+        let chatID = selectedChatID
+
+        if generatingChatID == chatID {
+            stopGeneration()
+        }
+
+        guard let messageIndex = selectedChat.messages.firstIndex(where: { $0.id == id }),
+              selectedChat.messages[messageIndex].role == .user else { return }
+
+        let messageContent = selectedChat.messages[messageIndex].content
+
+        updateChat(id: chatID) { chat in
+            chat.messages.removeSubrange(messageIndex...)
+            chat.draft = messageContent
+            chat.refreshDerivedState()
         }
     }
 
@@ -247,11 +279,65 @@ class ChatViewModel {
         scheduleSave()
     }
 
-    func saveNowForTesting() {
-        saveNow()
+    func saveNowForTesting() { saveNow() }
+}
+
+private extension ChatViewModel {
+    func appendPlaceholderAndStream(chatID: ChatSession.ID) {
+        let placeholder = ChatMessage(role: .assistant, content: "")
+        updateChat(id: chatID) { chat in
+            chat.messages.append(placeholder)
+            chat.isGenerating = true
+            chat.refreshDerivedState()
+        }
+        generatingChatID = chatID
+
+        let history = Array(chat(for: chatID).messages.dropLast())
+        streamResponse(chatID: chatID, history: history)
     }
 
-    private var selectedChatIndex: Int {
+    func streamResponse(chatID: ChatSession.ID, history: [ChatMessage]) {
+        currentTask = Task {
+            do {
+                let options = ChatRequestOptions(
+                    systemPrompt: settings.systemPrompt.isEmpty ? nil : settings.systemPrompt,
+                    temperature: settings.temperature,
+                    maxTokens: settings.maxTokens
+                )
+                let stream = chatClient.sendMessage(messages: history, options: options)
+                for try await token in stream {
+                    updateChat(id: chatID) { chat in
+                        if let index = chat.messages.indices.last,
+                           chat.messages[index].role == .assistant {
+                            chat.messages[index].content += token
+                            chat.refreshDerivedState()
+                        }
+                    }
+                }
+            } catch {
+                updateChat(id: chatID) { chat in
+                    if let index = chat.messages.indices.last,
+                       chat.messages[index].role == .assistant,
+                       chat.messages[index].content.isEmpty {
+                        chat.messages[index].content = "Error: \(error.localizedDescription)"
+                        chat.refreshDerivedState()
+                    }
+                }
+            }
+            updateChat(id: chatID) { chat in
+                chat.isGenerating = false
+                chat.refreshDerivedState()
+            }
+            if generatingChatID == chatID {
+                generatingChatID = nil
+            }
+            currentTask = nil
+        }
+    }
+}
+
+private extension ChatViewModel {
+    var selectedChatIndex: Int {
         if let index = chats.firstIndex(where: { $0.id == selectedChatID }) {
             return index
         }
@@ -262,28 +348,30 @@ class ChatViewModel {
         return 0
     }
 
-    private func chat(for id: ChatSession.ID) -> ChatSession {
+    func chat(for id: ChatSession.ID) -> ChatSession {
         guard let chat = chats.first(where: { $0.id == id }) else {
             fatalError("Missing chat for id \(id)")
         }
         return chat
     }
 
-    private func updateSelectedChat(_ update: (inout ChatSession) -> Void) {
+    func updateSelectedChat(_ update: (inout ChatSession) -> Void) {
         let index = selectedChatIndex
         update(&chats[index])
         chats[index].updatedAt = Date()
         scheduleSave()
     }
 
-    private func updateChat(id: ChatSession.ID, _ update: (inout ChatSession) -> Void) {
+    func updateChat(id: ChatSession.ID, _ update: (inout ChatSession) -> Void) {
         guard let index = chats.firstIndex(where: { $0.id == id }) else { return }
         update(&chats[index])
         chats[index].updatedAt = Date()
         scheduleSave()
     }
+}
 
-    private func scheduleSave() {
+private extension ChatViewModel {
+    func scheduleSave() {
         let snapshot = makePersistedState()
 
         saveTask?.cancel()
@@ -293,56 +381,16 @@ class ChatViewModel {
         }
     }
 
-    private func saveNow() {
+    func saveNow() {
         saveTask?.cancel()
         saveTask = nil
         try? persistence.saveState(makePersistedState())
     }
 
-    private func makePersistedState() -> PersistedChatState {
-        PersistedChatState(
+    func makePersistedState() -> PersistedChatState {
+        ChatStateMapper.makePersistedState(
             selectedChatID: selectedChatID,
-            chats: chats.map { chat in
-                var persistedChat = chat
-                if persistedChat.isGenerating,
-                   persistedChat.messages.last?.role == .assistant {
-                    persistedChat.messages.removeLast()
-                }
-                persistedChat.isGenerating = false
-                persistedChat.refreshDerivedState()
-                return persistedChat
-            }
+            chats: chats
         )
-    }
-
-    private static func loadInitialState(from persistence: any ChatPersistenceProtocol) -> PersistedChatState? {
-        do {
-            guard let persistedState = try persistence.loadState() else {
-                return nil
-            }
-
-            let restoredChats = persistedState.chats.map { chat in
-                var restoredChat = chat
-                restoredChat.isGenerating = false
-                restoredChat.refreshDerivedState()
-                return restoredChat
-            }
-
-            guard !restoredChats.isEmpty else {
-                return nil
-            }
-
-            let selectedChatID = restoredChats.contains(where: { $0.id == persistedState.selectedChatID })
-                ? persistedState.selectedChatID
-                : restoredChats[0].id
-
-            return PersistedChatState(
-                version: persistedState.version,
-                selectedChatID: selectedChatID,
-                chats: restoredChats
-            )
-        } catch {
-            return nil
-        }
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 #if canImport(AppKit)
 import AppKit
@@ -8,10 +9,14 @@ struct InputBarView: View {
     @Binding var text: String
     let isGenerating: Bool
     let isServerReady: Bool
+    let attachments: [PendingAttachment]
     let onSend: () -> Void
     let onStop: () -> Void
+    let onAddAttachments: ([URL]) -> Void
+    let onRemoveAttachment: (UUID) -> Void
 
     @State private var textHeight: CGFloat = Self.minEditorHeight
+    @State private var isShowingFilePicker = false
 
     static let minEditorHeight: CGFloat = 24
     static let maxEditorHeight: CGFloat = 120
@@ -19,32 +24,78 @@ struct InputBarView: View {
     static let verticalPadding: CGFloat = 8
 
     var body: some View {
-        HStack(spacing: 8) {
-            composer
+        VStack(spacing: 0) {
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(attachments) { attachment in
+                            AttachmentChip(
+                                fileName: attachment.fileName,
+                                onRemove: { onRemoveAttachment(attachment.id) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                }
+            }
 
-            if isGenerating {
-                Button(action: onStop) {
-                    Image(systemName: "stop.circle.fill")
-                        .font(.title2)
-                }
+            HStack(spacing: 8) {
+                Button(
+                    action: { isShowingFilePicker = true },
+                    label: {
+                        Image(systemName: "paperclip")
+                            .font(.title3)
+                    }
+                )
                 .buttonStyle(.plain)
-                .foregroundStyle(.red)
-                .accessibilityLabel("Stop Generation")
-                .accessibilityIdentifier("chat.stop")
-            } else {
-                Button(action: onSend) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
+                .foregroundStyle(.secondary)
+                .disabled(!isServerReady)
+                .accessibilityLabel("Attach File")
+                .accessibilityIdentifier("chat.attach")
+
+                composer
+
+                if isGenerating {
+                    Button(
+                        action: onStop,
+                        label: {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.title2)
+                        }
+                    )
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("Stop Generation")
+                    .accessibilityIdentifier("chat.stop")
+                } else {
+                    Button(
+                        action: onSend,
+                        label: {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.title2)
+                        }
+                    )
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+                    .disabled(!canSend)
+                    .accessibilityLabel("Send Message")
+                    .accessibilityIdentifier("chat.send")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-                .disabled(!canSend)
-                .accessibilityLabel("Send Message")
-                .accessibilityIdentifier("chat.send")
+            }
+            .padding(12)
+        }
+        .background(.bar)
+        .fileImporter(
+            isPresented: $isShowingFilePicker,
+            allowedContentTypes: [.plainText, .sourceCode, .json, .xml, .yaml, .pdf],
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result {
+                onAddAttachments(urls)
             }
         }
-        .padding(12)
-        .background(.bar)
     }
 
     private var composer: some View {
@@ -203,3 +254,29 @@ private final class EnterInterceptingTextView: NSTextView {
     }
 }
 #endif
+private struct AttachmentChip: View {
+    let fileName: String
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "doc.text")
+                .font(.caption)
+            Text(fileName)
+                .font(.caption)
+                .lineLimit(1)
+            Button(
+                action: onRemove,
+                label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.caption)
+                }
+            )
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.secondary.opacity(0.15))
+        .cornerRadius(8)
+    }
+}
