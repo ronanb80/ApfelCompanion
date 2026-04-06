@@ -136,10 +136,8 @@ class ApfelService {
             "/opt/homebrew/bin/apfel",
             "/usr/local/bin/apfel"
         ]
-        for path in knownPaths {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
+        for path in knownPaths where FileManager.default.fileExists(atPath: path) {
+            return path
         }
 
         // Fallback: use `which` to locate the binary
