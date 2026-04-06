@@ -2,15 +2,6 @@
 import AppKit
 #endif
 import Foundation
-#if canImport(PDFKit)
-import PDFKit
-#endif
-
-struct PendingAttachment: Identifiable, Equatable {
-    let id = UUID()
-    let fileName: String
-    let content: String
-}
 
 @MainActor
 @Observable
@@ -57,21 +48,15 @@ class ChatViewModel {
         }
     }
 
-    var isGenerating: Bool {
-        selectedChat.isGenerating
-    }
+    var isGenerating: Bool { selectedChat.isGenerating }
 
-    var canDeleteChats: Bool {
-        chats.count > 1
-    }
+    var canDeleteChats: Bool { chats.count > 1 }
 
     var canClearSelectedChat: Bool {
         !messages.isEmpty || !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    var canTrashSelectedChat: Bool {
-        canDeleteChats || canClearSelectedChat
-    }
+    var canTrashSelectedChat: Bool { canDeleteChats || canClearSelectedChat }
 
     init(
         apfelService: ApfelService,
@@ -85,7 +70,7 @@ class ChatViewModel {
         self.settingsPersistence = settingsPersistence ?? FileSettingsPersistence()
         self.settings = (try? self.settingsPersistence.loadSettings()) ?? .default
 
-        if let restoredState = Self.loadInitialState(from: self.persistence) {
+        if let restoredState = ChatStateMapper.loadInitialState(from: self.persistence) {
             self.chats = restoredState.chats
             self.selectedChatID = restoredState.selectedChatID
         } else {
@@ -130,7 +115,7 @@ class ChatViewModel {
 
     func addAttachments(urls: [URL]) {
         for url in urls {
-            guard let content = readFileContent(url: url) else { continue }
+            guard let content = AttachmentContentReader.readFileContent(url: url) else { continue }
             pendingAttachments.append(
                 PendingAttachment(fileName: url.lastPathComponent, content: content)
             )
@@ -294,9 +279,7 @@ class ChatViewModel {
         scheduleSave()
     }
 
-    func saveNowForTesting() {
-        saveNow()
-    }
+    func saveNowForTesting() { saveNow() }
 }
 
 private extension ChatViewModel {
@@ -405,101 +388,9 @@ private extension ChatViewModel {
     }
 
     func makePersistedState() -> PersistedChatState {
-        PersistedChatState(
+        ChatStateMapper.makePersistedState(
             selectedChatID: selectedChatID,
-            chats: chats.map { chat in
-                var persistedChat = chat
-                if persistedChat.isGenerating,
-                   persistedChat.messages.last?.role == .assistant {
-                    persistedChat.messages.removeLast()
-                }
-                persistedChat.isGenerating = false
-                persistedChat.refreshDerivedState()
-                return persistedChat
-            }
+            chats: chats
         )
-    }
-
-    static func loadInitialState(from persistence: any ChatPersistenceProtocol) -> PersistedChatState? {
-        do {
-            guard let persistedState = try persistence.loadState() else {
-                return nil
-            }
-
-            let restoredChats = persistedState.chats.map { chat in
-                var restoredChat = chat
-                restoredChat.isGenerating = false
-                restoredChat.refreshDerivedState()
-                return restoredChat
-            }
-
-            guard !restoredChats.isEmpty else {
-                return nil
-            }
-
-            let selectedChatID = restoredChats.contains(where: { $0.id == persistedState.selectedChatID })
-                ? persistedState.selectedChatID
-                : restoredChats[0].id
-
-            return PersistedChatState(
-                version: persistedState.version,
-                selectedChatID: selectedChatID,
-                chats: restoredChats
-            )
-        } catch {
-            return nil
-        }
-    }
-}
-
-private extension ChatViewModel {
-    func readFileContent(url: URL) -> String? {
-        let maxSize = 100 * 1024 // 100KB limit
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer {
-            if accessing { url.stopAccessingSecurityScopedResource() }
-        }
-
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-              let fileSize = attributes[.size] as? Int,
-              fileSize <= maxSize else {
-            return nil
-        }
-
-        if url.pathExtension.lowercased() == "pdf" {
-            return readPDFContent(url: url)
-        }
-
-        return try? String(contentsOf: url, encoding: .utf8)
-    }
-
-    func readPDFContent(url: URL) -> String? {
-        #if canImport(PDFKit)
-        guard let document = PDFDocument(url: url) else {
-            return nil
-        }
-
-        let text = (0..<document.pageCount)
-            .compactMap { document.page(at: $0) }
-            .map { page in
-                let pageText = page.string?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                if !pageText.isEmpty {
-                    return pageText
-                }
-
-                let annotationText = page.annotations
-                    .compactMap(\.contents)
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                return annotationText
-            }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-
-        return text.isEmpty ? nil : text
-        #else
-        return nil
-        #endif
     }
 }
