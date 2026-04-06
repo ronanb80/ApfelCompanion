@@ -11,6 +11,8 @@ struct StatusIndicator: View {
             Text(statusText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .accessibilityLabel("Server Status")
+                .accessibilityIdentifier("chat.status")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)

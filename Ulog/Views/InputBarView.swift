@@ -11,6 +11,8 @@ struct InputBarView: View {
         HStack(spacing: 8) {
             TextField("Type a message...", text: $text)
                 .textFieldStyle(.plain)
+                .accessibilityLabel("Message Input")
+                .accessibilityIdentifier("chat.input")
                 .onSubmit {
                     if canSend {
                         onSend()
@@ -25,6 +27,8 @@ struct InputBarView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.red)
+                .accessibilityLabel("Stop Generation")
+                .accessibilityIdentifier("chat.stop")
             } else {
                 Button(action: onSend) {
                     Image(systemName: "arrow.up.circle.fill")
@@ -33,6 +37,8 @@ struct InputBarView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.accentColor)
                 .disabled(!canSend)
+                .accessibilityLabel("Send Message")
+                .accessibilityIdentifier("chat.send")
             }
         }
         .padding(12)

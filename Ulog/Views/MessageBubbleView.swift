@@ -12,14 +12,17 @@ struct MessageBubbleView: View {
                 Text(message.role == .user ? "You" : "Assistant")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(message.role == .user ? "chat.userLabel" : "chat.assistantLabel")
 
                 Group {
                     if message.role == .assistant && message.content.isEmpty && isGenerating {
                         ProgressView()
                             .controlSize(.small)
+                            .accessibilityIdentifier("chat.assistantProgress")
                     } else {
                         Text(message.content)
                             .textSelection(.enabled)
+                            .accessibilityIdentifier(message.role == .user ? "chat.userMessage" : "chat.assistantMessage")
                     }
                 }
                 .padding(10)

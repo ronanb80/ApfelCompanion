@@ -1,6 +1,6 @@
 import Foundation
 
-class ChatClient {
+class ChatClient: ChatClientProtocol {
     private let baseURL: URL
 
     init(baseURL: URL) {

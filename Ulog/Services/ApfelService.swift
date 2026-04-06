@@ -90,6 +90,10 @@ class ApfelService {
         }
     }
 
+    func setStatusForTesting(_ status: Status) {
+        self.status = status
+    }
+
     // MARK: - Health Check
 
     private func waitForServer(timeout: TimeInterval) async -> Bool {

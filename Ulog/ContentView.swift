@@ -7,6 +7,10 @@ struct ContentView: View {
         _viewModel = State(initialValue: ChatViewModel(apfelService: apfelService))
     }
 
+    init(viewModel: ChatViewModel) {
+        _viewModel = State(initialValue: viewModel)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if viewModel.messages.isEmpty {
@@ -28,6 +32,7 @@ struct ContentView: View {
             StatusIndicator(status: viewModel.serverStatus)
         }
         .frame(minWidth: 500, minHeight: 400)
+        .accessibilityIdentifier("chat.root")
         .task {
             await viewModel.startServer()
         }
@@ -38,6 +43,8 @@ struct ContentView: View {
                 }
                 .disabled(viewModel.messages.isEmpty)
                 .help("Clear chat")
+                .accessibilityLabel("Clear Chat")
+                .accessibilityIdentifier("chat.clear")
             }
         }
     }
@@ -51,6 +58,7 @@ struct ContentView: View {
             Text("Start a conversation")
                 .font(.title2)
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier("chat.emptyStateTitle")
             if viewModel.serverStatus == .starting {
                 ProgressView()
                     .controlSize(.small)

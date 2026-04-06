@@ -7,16 +7,16 @@ class ChatViewModel {
     var isGenerating: Bool = false
 
     private let apfelService: ApfelService
-    private let chatClient: ChatClient
+    private let chatClient: any ChatClientProtocol
     private var currentTask: Task<Void, Never>?
 
     var serverStatus: ApfelService.Status {
         apfelService.status
     }
 
-    init(apfelService: ApfelService) {
+    init(apfelService: ApfelService, chatClient: (any ChatClientProtocol)? = nil) {
         self.apfelService = apfelService
-        self.chatClient = ChatClient(baseURL: apfelService.baseURL)
+        self.chatClient = chatClient ?? ChatClient(baseURL: apfelService.baseURL)
     }
 
     func startServer() async {

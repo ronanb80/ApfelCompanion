@@ -1,43 +1,94 @@
-//
-//  UlogUITests.swift
-//  UlogUITests
-//
-//  Created by Ronan Brigdale on 06/04/2026.
-//
-
 import XCTest
 
 final class UlogUITests: XCTestCase {
-
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
+    func testLaunchShowsReadyStateAndEmptyConversation() throws {
+        let app = launchApplication()
+        let inputField = app.textFields["Message Input"]
+        let clearButton = app.descendants(matching: .button).matching(identifier: "chat.clear").firstMatch
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
+        XCTAssertTrue(app.staticTexts["Start a conversation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(inputField.isEnabled)
+        XCTAssertFalse(clearButton.isEnabled)
+    }
+
+    @MainActor
+    func testSendMessageStreamsAssistantReply() throws {
+        let app = launchApplication()
+        let inputField = app.textFields["Message Input"]
+        let clearButton = app.descendants(matching: .button).matching(identifier: "chat.clear").firstMatch
+
+        XCTAssertTrue(inputField.waitForExistence(timeout: 5))
+        inputField.click()
+        inputField.typeText("Hello from UI tests")
+        app.buttons["Send Message"].click()
+
+        XCTAssertTrue(app.staticTexts["Hello from UI tests"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.staticTexts["Stub reply to: Hello from UI tests"].waitForExistence(timeout: 10)
+        )
+        XCTAssertTrue(clearButton.isEnabled)
+    }
+
+    @MainActor
+    func testStopGenerationKeepsPartialAssistantReply() throws {
+        let app = launchApplication()
+        let inputField = app.textFields["Message Input"]
+        let finalReply = "Stub reply to: Please stream a longer response so the stop button can interrupt it"
+
+        XCTAssertTrue(inputField.waitForExistence(timeout: 5))
+        inputField.click()
+        inputField.typeText("Please stream a longer response so the stop button can interrupt it")
+        app.buttons["Send Message"].click()
+
+        let stopButton = app.buttons["Stop Generation"]
+        XCTAssertTrue(stopButton.waitForExistence(timeout: 5))
+
+        sleep(1)
+        stopButton.click()
+
+        XCTAssertTrue(app.buttons["Send Message"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts[finalReply].exists)
+        XCTAssertTrue(app.staticTexts["Assistant"].exists)
+    }
+
+    @MainActor
+    func testClearChatRestoresEmptyState() throws {
+        let app = launchApplication()
+        let inputField = app.textFields["Message Input"]
+        let clearButton = app.descendants(matching: .button).matching(identifier: "chat.clear").firstMatch
+
+        XCTAssertTrue(inputField.waitForExistence(timeout: 5))
+        inputField.click()
+        inputField.typeText("Clear this conversation")
+        app.buttons["Send Message"].click()
+
+        XCTAssertTrue(app.staticTexts["Stub reply to: Clear this conversation"].waitForExistence(timeout: 10))
+        XCTAssertTrue(clearButton.isEnabled)
+
+        clearButton.click()
+
+        XCTAssertTrue(app.staticTexts["Start a conversation"].waitForExistence(timeout: 5))
+        XCTAssertFalse(clearButton.isEnabled)
+        XCTAssertFalse(app.staticTexts["Clear this conversation"].exists)
     }
 
     @MainActor
     func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
+            launchApplication().terminate()
         }
+    }
+
+    @MainActor
+    private func launchApplication() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        return app
     }
 }
