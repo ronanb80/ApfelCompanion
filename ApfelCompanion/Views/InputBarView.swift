@@ -113,7 +113,10 @@ private struct AutoGrowingTextView: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.font = NSFont.preferredFont(forTextStyle: .body)
         textView.textColor = .labelColor
-        textView.textContainerInset = NSSize(width: InputBarView.horizontalPadding - 6, height: InputBarView.verticalPadding)
+        textView.textContainerInset = NSSize(
+            width: InputBarView.horizontalPadding - 6,
+            height: InputBarView.verticalPadding
+        )
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.heightTracksTextView = false
