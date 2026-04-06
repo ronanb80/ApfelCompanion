@@ -20,7 +20,7 @@ struct MessageBubbleView: View {
                             .controlSize(.small)
                             .accessibilityIdentifier("chat.assistantProgress")
                     } else {
-                        Text(message.content)
+                        Text(message.renderedContent)
                             .textSelection(.enabled)
                             .accessibilityIdentifier(
                                 message.role == .user ? "chat.userMessage" : "chat.assistantMessage"

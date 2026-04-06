@@ -4,6 +4,33 @@ import Testing
 
 @Suite("Chat View Model")
 struct ChatViewModelTests {
+    @Test("Chat messages parse markdown for rendering")
+    func chatMessagesParseMarkdownForRendering() {
+        let message = ChatMessage(role: .assistant, content: "**Bold** and *italic*")
+
+        #expect(String(message.renderedContent.characters) == "Bold and italic")
+        #expect(message.renderedContent.runs.contains { run in
+            run.inlinePresentationIntent == .stronglyEmphasized
+        })
+        #expect(message.renderedContent.runs.contains { run in
+            run.inlinePresentationIntent == .emphasized
+        })
+    }
+
+    @Test("Chat messages preserve line breaks when rendering markdown")
+    func chatMessagesPreserveLineBreaksWhenRenderingMarkdown() {
+        let message = ChatMessage(role: .assistant, content: "First line\nSecond line\n\nThird line")
+
+        #expect(String(message.renderedContent.characters) == "First line\nSecond line\n\nThird line")
+    }
+
+    @Test("Chat messages fall back to plain text when markdown cannot be parsed")
+    func chatMessagesFallbackToPlainTextWhenMarkdownParsingFails() {
+        let message = ChatMessage(role: .assistant, content: "[broken](not a valid url")
+
+        #expect(String(message.renderedContent.characters) == "[broken](not a valid url")
+    }
+
     @MainActor
     @Test("Initial state creates one empty chat")
     func initialStateCreatesOneEmptyChat() {
